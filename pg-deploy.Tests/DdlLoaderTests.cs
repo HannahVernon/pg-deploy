@@ -668,4 +668,96 @@ public class DdlLoaderTests : IDisposable
         Assert.Contains("ON DELETE CASCADE", fk.Definition);
         Assert.Contains("ON UPDATE SET NULL", fk.Definition);
     }
+
+    // ── System Object Filtering ─────────────────────────────────────
+
+    [Fact]
+    public void Load_ExcludesSystemSchemasByDefault()
+    {
+        WriteFile("schemas", "pg_toast_temp_12.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"pg_toast_temp_12\";\nALTER SCHEMA \"pg_toast_temp_12\" OWNER TO \"postgres\";\n");
+        WriteFile("schemas", "pg_catalog.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"pg_catalog\";\n");
+        WriteFile("schemas", "information_schema.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"information_schema\";\n");
+        WriteFile("schemas", "pg_temp_5.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"pg_temp_5\";\n");
+        WriteFile("schemas", "public.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"public\";\nALTER SCHEMA \"public\" OWNER TO \"postgres\";\n");
+
+        var schema = DdlLoader.Load(_testDir);
+
+        Assert.Single(schema.Schemas);
+        Assert.True(schema.Schemas.ContainsKey("public"));
+    }
+
+    [Fact]
+    public void Load_ExcludesSystemTablesAndTypes()
+    {
+        WriteFile("schemas", "pg_toast.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"pg_toast\";\n");
+        WriteFile("tables", "pg_toast.pg_toast_12345.sql",
+            "CREATE TABLE \"pg_toast\".\"pg_toast_12345\" (\n    \"chunk_id\" oid NOT NULL\n);\n");
+        WriteFile("types", "pg_catalog.int4.sql",
+            "CREATE TYPE \"pg_catalog\".\"int4\" AS ENUM ('x');\n");
+        WriteFile("tables", "public.users.sql",
+            "CREATE TABLE \"public\".\"users\" (\n    \"id\" integer NOT NULL\n);\n");
+
+        var schema = DdlLoader.Load(_testDir);
+
+        Assert.Empty(schema.Schemas);
+        Assert.Single(schema.Tables);
+        Assert.True(schema.Tables.ContainsKey("public.users"));
+        Assert.Empty(schema.Types);
+    }
+
+    [Fact]
+    public void Load_ExcludesPlpgsqlExtension()
+    {
+        WriteFile("extensions", "plpgsql.sql",
+            "CREATE EXTENSION IF NOT EXISTS \"plpgsql\" SCHEMA \"pg_catalog\";\n");
+        WriteFile("extensions", "pgcrypto.sql",
+            "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\" SCHEMA \"public\";\n");
+
+        var schema = DdlLoader.Load(_testDir);
+
+        Assert.Single(schema.Extensions);
+        Assert.True(schema.Extensions.ContainsKey("pgcrypto"));
+    }
+
+    [Fact]
+    public void Load_IncludesSystemObjectsWhenFlagSet()
+    {
+        WriteFile("schemas", "pg_toast_temp_12.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"pg_toast_temp_12\";\n");
+        WriteFile("schemas", "pg_catalog.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"pg_catalog\";\n");
+        WriteFile("schemas", "public.sql",
+            "CREATE SCHEMA IF NOT EXISTS \"public\";\n");
+        WriteFile("extensions", "plpgsql.sql",
+            "CREATE EXTENSION IF NOT EXISTS \"plpgsql\" SCHEMA \"pg_catalog\";\n");
+
+        var schema = DdlLoader.Load(_testDir, includeSystemObjects: true);
+
+        Assert.Equal(3, schema.Schemas.Count);
+        Assert.Single(schema.Extensions);
+        Assert.True(schema.Extensions.ContainsKey("plpgsql"));
+    }
+
+    [Fact]
+    public void Load_ExcludesSystemFunctionsAndViews()
+    {
+        WriteFile("views", "pg_catalog.pg_views.sql",
+            "CREATE OR REPLACE VIEW \"pg_catalog\".\"pg_views\" AS\n SELECT 1;\n");
+        WriteFile("views", "public.my_view.sql",
+            "CREATE OR REPLACE VIEW \"public\".\"my_view\" AS\n SELECT 1;\n");
+        WriteFile("functions", "information_schema.schemata_func_abc123.sql",
+            "CREATE OR REPLACE FUNCTION \"information_schema\".\"schemata_func\"() RETURNS void LANGUAGE plpgsql AS $$ BEGIN END; $$;\n");
+
+        var schema = DdlLoader.Load(_testDir);
+
+        Assert.Single(schema.Views);
+        Assert.True(schema.Views.ContainsKey("public.my_view"));
+        Assert.Empty(schema.Functions);
+    }
 }

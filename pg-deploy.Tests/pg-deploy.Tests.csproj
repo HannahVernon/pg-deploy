@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\pg_deploy\pg_deploy.csproj" />
+    <ProjectReference Include="..\pg-deploy\pg-deploy.csproj" />
   </ItemGroup>
 
 </Project>

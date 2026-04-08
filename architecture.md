@@ -1,8 +1,8 @@
-# pg_deploy — Architecture
+# pg-deploy — Architecture
 
 ## Overview
 
-pg_deploy is a cross-platform .NET 9 CLI tool that generates incremental PostgreSQL deployment scripts by comparing two DDL folder trees produced by [pg-extract-schema](https://github.com/HannahVernon/pg-extract-schema). It uses `ALTER` where possible instead of `DROP`+`CREATE` to preserve permissions and avoid cascading side-effects.
+pg-deploy is a cross-platform .NET 9 CLI tool that generates incremental PostgreSQL deployment scripts by comparing two DDL folder trees produced by [pg-extract-schema](https://github.com/HannahVernon/pg-extract-schema). It uses `ALTER` where possible instead of `DROP`+`CREATE` to preserve permissions and avoid cascading side-effects.
 
 **Key design goals:**
 
@@ -30,13 +30,13 @@ pg_deploy/
 │       ├── ScriptGenerator.cs              SQL script emitter (header, body, footer)
 │       └── GitInfo.cs                      Git branch/remote detection
 │
-├── pg_deploy.Tests/                        xUnit test suite
+├── pg-deploy.Tests/                        xUnit test suite
 │   ├── DdlLoaderTests.cs                   Parser tests
 │   └── SchemaDifferTests.cs                Differ + security tests
 │
 ├── README.md
 ├── architecture.md                         (this file)
-└── pg_deploy.slnx                          Solution file
+└── pg-deploy.slnx                          Solution file
 ```
 
 ### External Dependencies
@@ -276,7 +276,7 @@ The script generator emits changes in a fixed dependency order that respects Pos
 
 ### Threat Model
 
-pg_deploy reads DDL text files and embeds portions of their content into a SQL script that will be executed against a production database. The primary attack surface is **malicious content in source DDL files** being passed through to the output script.
+pg-deploy reads DDL text files and embeds portions of their content into a SQL script that will be executed against a production database. The primary attack surface is **malicious content in source DDL files** being passed through to the output script.
 
 ```
  Untrusted Input                    Trust Boundary                 Sensitive Output
@@ -288,7 +288,7 @@ pg_deploy reads DDL text files and embeds portions of their content into a SQL s
    Attack vector              Validation layer                  Target of attack
 ```
 
-**Key insight:** Unlike Microsoft's sqlpackage (which works with compiled DACPAC models and never handles raw SQL text), pg_deploy works directly with SQL text files. Raw DDL from views, functions, materialized views, and triggers is embedded verbatim into the output script. This is an inherent architectural tradeoff of working with text-based DDL rather than a compiled schema model.
+**Key insight:** Unlike Microsoft's sqlpackage (which works with compiled DACPAC models and never handles raw SQL text), pg-deploy works directly with SQL text files. Raw DDL from views, functions, materialized views, and triggers is embedded verbatim into the output script. This is an inherent architectural tradeoff of working with text-based DDL rather than a compiled schema model.
 
 ### Security Controls (Implemented)
 
