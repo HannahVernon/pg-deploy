@@ -1172,4 +1172,142 @@ public class SchemaDifferTests : IDisposable
         Assert.Contains("ADD CONSTRAINT", ckChange.Sql);
         Assert.DoesNotContain("SKIPPED", ckChange.Sql);
     }
+
+    // ── Parameter Signature Extraction ─────────────────────────────
+
+    [Fact]
+    public void ExtractParameterSignature_SimpleProcedure()
+    {
+        var ddl = "CREATE OR REPLACE PROCEDURE \"billing_own\".\"xu_pad_prepare\"(IN p_appprofileid integer, IN p_effectivedate date)\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;";
+        var regex = new System.Text.RegularExpressions.Regex(
+            @"CREATE\s+OR\s+REPLACE\s+(FUNCTION|PROCEDURE)\s+(\S+)\.(\S+)\(",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var m = regex.Match(ddl);
+        Assert.True(m.Success);
+
+        var sig = DdlLoader.ExtractParameterSignature(ddl, m.Index + m.Length);
+        Assert.Equal("IN p_appprofileid integer, IN p_effectivedate date", sig);
+    }
+
+    [Fact]
+    public void ExtractParameterSignature_NoParams_ReturnsNull()
+    {
+        var ddl = "CREATE OR REPLACE FUNCTION \"myschema\".\"my_func\"()\nRETURNS void\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;";
+        var regex = new System.Text.RegularExpressions.Regex(
+            @"CREATE\s+OR\s+REPLACE\s+(FUNCTION|PROCEDURE)\s+(\S+)\.(\S+)\(",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var m = regex.Match(ddl);
+        Assert.True(m.Success);
+
+        var sig = DdlLoader.ExtractParameterSignature(ddl, m.Index + m.Length);
+        Assert.Null(sig);
+    }
+
+    [Fact]
+    public void ExtractParameterSignature_NestedParens()
+    {
+        var ddl = "CREATE OR REPLACE FUNCTION \"s\".\"f\"(p_val numeric(10,2), p_name text)\nRETURNS void\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;";
+        var regex = new System.Text.RegularExpressions.Regex(
+            @"CREATE\s+OR\s+REPLACE\s+(FUNCTION|PROCEDURE)\s+(\S+)\.(\S+)\(",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var m = regex.Match(ddl);
+        Assert.True(m.Success);
+
+        var sig = DdlLoader.ExtractParameterSignature(ddl, m.Index + m.Length);
+        Assert.Equal("p_val numeric(10,2), p_name text", sig);
+    }
+
+    // ── Overloaded Function DROP Deduplication ─────────────────────
+
+    [Fact]
+    public void OverloadedProcedure_DropsIncludeSignature()
+    {
+        var procDdl1 = "CREATE OR REPLACE PROCEDURE \"s\".\"my_proc\"(IN p_id integer)\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;";
+        var procDdl2 = "CREATE OR REPLACE PROCEDURE \"s\".\"my_proc\"(IN p_id integer, IN p_name text)\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;";
+        WriteTarget("procedures", "s.my_proc_aaa11111.sql", procDdl1);
+        WriteTarget("procedures", "s.my_proc_bbb22222.sql", procDdl2);
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: true);
+        var changes = differ.ComputeChanges();
+
+        var drops = changes.Where(c => c.Action == ChangeAction.Drop && c.ObjectType == "PROCEDURE").ToList();
+        Assert.Equal(2, drops.Count);
+        Assert.Contains(drops, d => d.Sql.Contains("(IN p_id integer)"));
+        Assert.Contains(drops, d => d.Sql.Contains("(IN p_id integer, IN p_name text)"));
+    }
+
+    [Fact]
+    public void IdenticalOverloads_Deduplicated()
+    {
+        var procDdl = "CREATE OR REPLACE PROCEDURE \"s\".\"my_proc\"(IN p_id integer)\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;";
+        WriteTarget("procedures", "s.my_proc_aaa11111.sql", procDdl);
+        WriteTarget("procedures", "s.my_proc_bbb22222.sql", procDdl);
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: true);
+        var changes = differ.ComputeChanges();
+
+        var drops = changes.Where(c => c.Action == ChangeAction.Drop && c.ObjectType == "PROCEDURE").ToList();
+        Assert.Single(drops);
+        Assert.Contains("(IN p_id integer)", drops[0].Sql);
+    }
+
+    // ── Full Creation Mode (No Target) ─────────────────────────────
+
+    [Fact]
+    public void EmptyTarget_AllSourceObjectsAreAdds()
+    {
+        WriteSource("schemas", "myschema.sql", "CREATE SCHEMA IF NOT EXISTS \"myschema\";\n");
+        WriteSource("tables", "myschema.users.sql",
+            "CREATE TABLE \"myschema\".\"users\" (\n    \"id\" bigint NOT NULL\n);\n");
+        WriteSource("functions", "myschema.get_user.sql",
+            "CREATE OR REPLACE FUNCTION \"myschema\".\"get_user\"(p_id integer)\nRETURNS void\nLANGUAGE plpgsql\nAS $$\nBEGIN\n  NULL;\nEND;\n$$;");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = new DatabaseSchema();
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        Assert.Equal(3, changes.Count);
+        Assert.All(changes, c => Assert.Equal(ChangeAction.Add, c.Action));
+        Assert.Contains(changes, c => c.ObjectType == "SCHEMA");
+        Assert.Contains(changes, c => c.ObjectType == "TABLE");
+        Assert.Contains(changes, c => c.ObjectType == "FUNCTION");
+    }
+
+    [Fact]
+    public void EmptyTarget_NeverProducesDrops()
+    {
+        WriteSource("schemas", "myschema.sql", "CREATE SCHEMA IF NOT EXISTS \"myschema\";\n");
+        WriteSource("tables", "myschema.users.sql",
+            "CREATE TABLE \"myschema\".\"users\" (\n    \"id\" bigint NOT NULL\n);\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = new DatabaseSchema();
+        var differ = new SchemaDiffer(source, target, allowDrops: true);
+        var changes = differ.ComputeChanges();
+
+        Assert.DoesNotContain(changes, c => c.Action == ChangeAction.Drop);
+    }
+
+    [Fact]
+    public void FullCreationScript_HeaderSaysCreationMode()
+    {
+        WriteSource("schemas", "myschema.sql", "CREATE SCHEMA IF NOT EXISTS \"myschema\";\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = new DatabaseSchema();
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        var generator = new pg_deploy.ScriptGeneration.ScriptGenerator(changes, _sourceDir, null, false);
+        var script = generator.Generate();
+
+        Assert.Contains("Full Creation Script", script);
+        Assert.Contains("Full creation (no target", script);
+        Assert.DoesNotContain("Target DDL:", script);
+    }
 }

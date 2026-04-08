@@ -55,7 +55,7 @@ pg-deploy --source <source-ddl-folder> --target <target-ddl-folder> --output <ou
 | Parameter | Alias | Required | Description |
 |---|---|---|---|
 | `--source` | `-s` | Yes | Folder containing new/desired DDL files |
-| `--target` | `-t` | Yes | Folder containing existing DDL (extracted from DB) |
+| `--target` | `-t` | No | Folder containing existing DDL (extracted from DB). If omitted, generates a full creation script. |
 | `--output` | `-o` | Yes | Output path for the generated SQL script |
 | `--allow-drops` | | No | Enable destructive changes (default: off) |
 | `--trust-source-folder` | | No | Skip untrusted-source warning prompt (required for non-interactive use) |
@@ -77,6 +77,11 @@ pg-deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --allow-drops
 Non-interactive / CI usage (skip source trust prompt):
 ```bash
 pg-deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --trust-source-folder
+```
+
+Generate a full creation script (no target — all objects are created from scratch):
+```bash
+pg-deploy -s ./new-ddl -o ./create-all.sql --trust-source-folder
 ```
 
 Verbose output for debugging:
