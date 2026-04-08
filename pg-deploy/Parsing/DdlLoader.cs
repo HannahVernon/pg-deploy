@@ -604,16 +604,41 @@ public static partial class DdlLoader
             var schemaName = m.Groups[2].Value.Trim('"');
             var funcName = m.Groups[3].Value.Trim('"');
 
+            var paramSig = ExtractParameterSignature(content, m.Index + m.Length);
+
             var def = new FunctionDef
             {
                 Schema = schemaName,
                 Name = funcName,
                 Kind = kind,
+                ParameterSignature = paramSig,
                 RawDdl = content.Trim(),
                 FileName = fileName
             };
             schema.Functions[key] = def;
         }
+    }
+
+    /// <summary>
+    /// Extracts the parameter signature from a CREATE FUNCTION/PROCEDURE statement.
+    /// Starts scanning from the character after the opening '(' and finds the matching ')'.
+    /// Returns the text between parens (e.g., "IN p_id integer, IN p_date timestamp without time zone").
+    /// </summary>
+    private static string? ExtractParameterSignature(string content, int startAfterOpenParen)
+    {
+        int depth = 1;
+        int start = startAfterOpenParen;
+        for (int i = start; i < content.Length; i++)
+        {
+            if (content[i] == '(') depth++;
+            else if (content[i] == ')')
+            {
+                depth--;
+                if (depth == 0)
+                    return content[start..i].Trim();
+            }
+        }
+        return null;
     }
 
     // ── Triggers ────────────────────────────────────────────────────
