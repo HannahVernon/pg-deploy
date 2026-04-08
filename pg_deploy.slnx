@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="pg_deploy.Tests/pg_deploy.Tests.csproj" />
+  <Project Path="pg_deploy/pg_deploy.csproj" />
+</Solution>
