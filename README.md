@@ -140,6 +140,10 @@ The generated script includes:
 - **CHECK constraint validation**: CHECK constraint expressions are validated to reject semicolons outside string literals, preventing SQL injection via crafted constraint definitions.
 - **Review before executing**: Always review the generated deployment script before running it against a production database.
 
+## Architecture
+
+See [architecture.md](architecture.md) for detailed documentation on the system design, data flow pipeline, component responsibilities, dependency ordering, and security architecture (including known vulnerabilities).
+
 ## Building & Testing
 
 ```bash
