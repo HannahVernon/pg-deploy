@@ -1,10 +1,10 @@
-# pg_deploy
+# pg-deploy
 
 A cross-platform .NET 9 CLI tool that generates incremental PostgreSQL deployment scripts by comparing DDL folders.
 
 ## Overview
 
-`pg_deploy` compares a **source** folder (containing desired/new DDL) against a **target** folder (containing existing DDL extracted from a database) and produces a single SQL deployment script with only the changes needed to bring the target in line with the source.
+`pg-deploy` compares a **source** folder (containing desired/new DDL) against a **target** folder (containing existing DDL extracted from a database) and produces a single SQL deployment script with only the changes needed to bring the target in line with the source.
 
 Both folders should be in the format produced by [`pg-extract-schema`](https://github.com/HannahVernon/pg-extract-schema), with subdirectories per object type (`tables/`, `views/`, `functions/`, etc.).
 
@@ -42,12 +42,12 @@ Both folders should be in the format produced by [`pg-extract-schema`](https://g
 dotnet build -c Release
 ```
 
-The executable will be at `bin/Release/net9.0/pg_deploy.exe` (Windows) or `bin/Release/net9.0/pg_deploy` (Linux/macOS).
+The executable will be at `bin/Release/net9.0/pg-deploy.exe` (Windows) or `bin/Release/net9.0/pg-deploy` (Linux/macOS).
 
 ## Usage
 
 ```bash
-pg_deploy --source <source-ddl-folder> --target <target-ddl-folder> --output <output-script.sql> [options]
+pg-deploy --source <source-ddl-folder> --target <target-ddl-folder> --output <output-script.sql> [options]
 ```
 
 ### Parameters
@@ -66,22 +66,22 @@ pg_deploy --source <source-ddl-folder> --target <target-ddl-folder> --output <ou
 
 Generate a deployment script (safe mode — no drops):
 ```bash
-pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql
+pg-deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql
 ```
 
 Generate with destructive changes enabled:
 ```bash
-pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --allow-drops
+pg-deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --allow-drops
 ```
 
 Non-interactive / CI usage (skip source trust prompt):
 ```bash
-pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --trust-source-folder
+pg-deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --trust-source-folder
 ```
 
 Verbose output for debugging:
 ```bash
-pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql -v
+pg-deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql -v
 ```
 
 ### Typical Workflow
@@ -95,7 +95,7 @@ pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql -v
 
 3. Generate the deployment script:
    ```bash
-   pg_deploy -s ./updated-ddl -t ./current-ddl -o ./deploy.sql --allow-drops
+   pg-deploy -s ./updated-ddl -t ./current-ddl -o ./deploy.sql --allow-drops
    ```
 
 4. Review the generated script, paying attention to:

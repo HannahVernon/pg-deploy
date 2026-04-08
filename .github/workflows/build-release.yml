@@ -42,16 +42,16 @@ jobs:
         include:
           - rid: win-x64
             os: windows-latest
-            artifact: pg_deploy-win-x64
+            artifact: pg-deploy-win-x64
           - rid: linux-x64
             os: ubuntu-latest
-            artifact: pg_deploy-linux-x64
+            artifact: pg-deploy-linux-x64
           - rid: osx-x64
             os: macos-latest
-            artifact: pg_deploy-osx-x64
+            artifact: pg-deploy-osx-x64
           - rid: osx-arm64
             os: macos-latest
-            artifact: pg_deploy-osx-arm64
+            artifact: pg-deploy-osx-arm64
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -77,7 +77,7 @@ jobs:
 
       - name: Publish
         run: >
-          dotnet publish pg_deploy/pg_deploy.csproj
+          dotnet publish pg-deploy/pg-deploy.csproj
           --configuration Release
           --runtime ${{ matrix.rid }}
           --self-contained true
@@ -114,7 +114,7 @@ jobs:
           tag_name: ${{ needs.prepare.outputs.tag }}
           name: "Release ${{ needs.prepare.outputs.tag }}"
           body: |
-            ## pg_deploy ${{ needs.prepare.outputs.tag }}
+            ## pg-deploy ${{ needs.prepare.outputs.tag }}
 
             Cross-platform CLI tool that generates incremental PostgreSQL deployment scripts.
 
@@ -122,10 +122,10 @@ jobs:
 
             | Platform | File |
             |----------|------|
-            | Windows x64 | `pg_deploy-win-x64-${{ needs.prepare.outputs.version }}.zip` |
-            | Linux x64 | `pg_deploy-linux-x64-${{ needs.prepare.outputs.version }}.zip` |
-            | macOS x64 | `pg_deploy-osx-x64-${{ needs.prepare.outputs.version }}.zip` |
-            | macOS ARM64 | `pg_deploy-osx-arm64-${{ needs.prepare.outputs.version }}.zip` |
+            | Windows x64 | `pg-deploy-win-x64-${{ needs.prepare.outputs.version }}.zip` |
+            | Linux x64 | `pg-deploy-linux-x64-${{ needs.prepare.outputs.version }}.zip` |
+            | macOS x64 | `pg-deploy-osx-x64-${{ needs.prepare.outputs.version }}.zip` |
+            | macOS ARM64 | `pg-deploy-osx-arm64-${{ needs.prepare.outputs.version }}.zip` |
 
             Self-contained builds — no .NET runtime installation required.
           files: ./artifacts/**/*.zip
