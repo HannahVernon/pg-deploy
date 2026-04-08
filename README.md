@@ -58,6 +58,7 @@ pg_deploy --source <source-ddl-folder> --target <target-ddl-folder> --output <ou
 | `--target` | `-t` | Yes | Folder containing existing DDL (extracted from DB) |
 | `--output` | `-o` | Yes | Output path for the generated SQL script |
 | `--allow-drops` | | No | Enable destructive changes (default: off) |
+| `--trust-source-folder` | | No | Skip untrusted-source warning prompt (required for non-interactive use) |
 | `--verbose` | `-v` | No | Verbose console output |
 | `--quiet` | `-q` | No | Suppress all console output |
 
@@ -71,6 +72,11 @@ pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql
 Generate with destructive changes enabled:
 ```bash
 pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --allow-drops
+```
+
+Non-interactive / CI usage (skip source trust prompt):
+```bash
+pg_deploy -s ./new-ddl -t ./current-ddl -o ./deploy.sql --trust-source-folder
 ```
 
 Verbose output for debugging:
@@ -127,6 +133,12 @@ The generated script includes:
   11. Triggers
 
 - **Destructive changes section** (when `--allow-drops` is used) — clearly marked at the bottom
+
+## Security
+
+- **Source folder trust**: DDL files from the source folder are embedded into the generated SQL script. Without `--trust-source-folder`, the tool displays a warning and prompts for confirmation before proceeding. Always verify the provenance of your source DDL files.
+- **CHECK constraint validation**: CHECK constraint expressions are validated to reject semicolons outside string literals, preventing SQL injection via crafted constraint definitions.
+- **Review before executing**: Always review the generated deployment script before running it against a production database.
 
 ## Building & Testing
 
