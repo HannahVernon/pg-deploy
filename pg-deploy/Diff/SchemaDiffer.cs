@@ -1055,18 +1055,25 @@ public sealed class SchemaDiffer
 
         if (_allowDrops)
         {
+            var droppedSignatures = new HashSet<string>(StringComparer.Ordinal);
             foreach (var (key, tgt) in _target.Functions)
             {
                 if (!_source.Functions.ContainsKey(key))
                 {
                     var dropKw = tgt.Kind.Equals("procedure", StringComparison.OrdinalIgnoreCase) ? "PROCEDURE" : "FUNCTION";
+                    var sigPart = tgt.ParameterSignature != null ? $"({tgt.ParameterSignature})" : "";
+                    var dropSql = $"DROP {dropKw} IF EXISTS {tgt.QualifiedName}{sigPart};";
+
+                    if (!droppedSignatures.Add(dropSql))
+                        continue;
+
                     changes.Add(new SchemaChange
                     {
                         Category = ChangeCategory.Function,
                         Action = ChangeAction.Drop,
                         ObjectType = dropKw,
                         ObjectName = tgt.QualifiedName,
-                        Sql = $"DROP {dropKw} IF EXISTS {tgt.QualifiedName};",
+                        Sql = dropSql,
                         IsDestructive = true
                     });
                 }

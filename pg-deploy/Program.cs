@@ -7,7 +7,7 @@ using pg_deploy.ScriptGeneration;
 var sourceOption = new Option<string>("--source", "Folder containing new/desired DDL files") { IsRequired = true };
 sourceOption.AddAlias("-s");
 
-var targetOption = new Option<string>("--target", "Folder containing existing DDL (extracted from DB)") { IsRequired = true };
+var targetOption = new Option<string?>("--target", "Folder containing existing DDL (extracted from DB). If omitted, generates a full creation script.");
 targetOption.AddAlias("-t");
 
 var outputOption = new Option<string>("--output", "Output path for the generated SQL deployment script") { IsRequired = true };
@@ -44,7 +44,9 @@ rootCommand.SetHandler((source, target, output, allowDrops, trustSource, include
             return;
         }
 
-        if (!Directory.Exists(target))
+        bool fullCreateMode = string.IsNullOrEmpty(target);
+
+        if (!fullCreateMode && !Directory.Exists(target))
         {
             if (!quiet) Console.Error.WriteLine($"Error: Target folder not found: {target}");
             Environment.ExitCode = 1;
@@ -82,17 +84,31 @@ rootCommand.SetHandler((source, target, output, allowDrops, trustSource, include
             Console.WriteLine();
         }
 
-        if (!quiet) Console.WriteLine("pg-deploy — PostgreSQL Deployment Script Generator");
-        if (!quiet) Console.WriteLine();
+        if (!quiet)
+        {
+            Console.WriteLine("pg-deploy — PostgreSQL Deployment Script Generator");
+            if (fullCreateMode)
+                Console.WriteLine("Mode: Full creation script (no target specified)");
+            Console.WriteLine();
+        }
 
         // Load schemas
         if (verbose) Console.WriteLine($"Loading source DDL from: {Path.GetFullPath(source)}");
         var sourceSchema = DdlLoader.Load(source, includeSystem);
         if (verbose) PrintSchemaStats("Source", sourceSchema);
 
-        if (verbose) Console.WriteLine($"Loading target DDL from: {Path.GetFullPath(target)}");
-        var targetSchema = DdlLoader.Load(target, includeSystem);
-        if (verbose) PrintSchemaStats("Target", targetSchema);
+        DatabaseSchema targetSchema;
+        if (fullCreateMode)
+        {
+            if (verbose) Console.WriteLine("No target folder — using empty schema (full creation mode)");
+            targetSchema = new DatabaseSchema();
+        }
+        else
+        {
+            if (verbose) Console.WriteLine($"Loading target DDL from: {Path.GetFullPath(target!)}");
+            targetSchema = DdlLoader.Load(target!, includeSystem);
+            if (verbose) PrintSchemaStats("Target", targetSchema);
+        }
 
         // Compute diff
         if (verbose) Console.WriteLine("\nComputing differences...");

@@ -12,10 +12,10 @@ public sealed class ScriptGenerator
 {
     private readonly List<SchemaChange> _changes;
     private readonly string _sourcePath;
-    private readonly string _targetPath;
+    private readonly string? _targetPath;
     private readonly bool _allowDrops;
 
-    public ScriptGenerator(List<SchemaChange> changes, string sourcePath, string targetPath, bool allowDrops)
+    public ScriptGenerator(List<SchemaChange> changes, string sourcePath, string? targetPath, bool allowDrops)
     {
         _changes = changes;
         _sourcePath = sourcePath;
@@ -59,7 +59,10 @@ public sealed class ScriptGenerator
     {
         sb.AppendLine("/*");
         sb.AppendLine("================================================================================");
-        sb.AppendLine("  PostgreSQL Deployment Script");
+        if (_targetPath == null)
+            sb.AppendLine("  PostgreSQL Full Creation Script");
+        else
+            sb.AppendLine("  PostgreSQL Deployment Script");
         sb.AppendLine($"  Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
         sb.AppendLine("  Generator: pg-deploy");
         sb.AppendLine("  https://github.com/HannahVernon/pg-deploy");
@@ -67,29 +70,45 @@ public sealed class ScriptGenerator
 
         // Git info
         var sourceGit = GitInfo.Detect(_sourcePath);
-        var targetGit = GitInfo.Detect(_targetPath);
 
-        if (sourceGit.IsGitRepo || targetGit.IsGitRepo)
+        if (_targetPath != null)
+        {
+            var targetGit = GitInfo.Detect(_targetPath);
+
+            if (sourceGit.IsGitRepo || targetGit.IsGitRepo)
+            {
+                sb.AppendLine();
+                sb.AppendLine("  Source & Target Details:");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine($"  Source DDL: {Path.GetFullPath(_sourcePath)}");
+            if (sourceGit.IsGitRepo)
+            {
+                sb.AppendLine($"    Git Branch: {sourceGit.Branch}");
+                foreach (var remote in sourceGit.Remotes)
+                    sb.AppendLine($"    Remote: {remote}");
+            }
+
+            sb.AppendLine($"  Target DDL: {Path.GetFullPath(_targetPath)}");
+            if (targetGit.IsGitRepo)
+            {
+                sb.AppendLine($"    Git Branch: {targetGit.Branch}");
+                foreach (var remote in targetGit.Remotes)
+                    sb.AppendLine($"    Remote: {remote}");
+            }
+        }
+        else
         {
             sb.AppendLine();
-            sb.AppendLine("  Source & Target Details:");
-        }
-
-        sb.AppendLine();
-        sb.AppendLine($"  Source DDL: {Path.GetFullPath(_sourcePath)}");
-        if (sourceGit.IsGitRepo)
-        {
-            sb.AppendLine($"    Git Branch: {sourceGit.Branch}");
-            foreach (var remote in sourceGit.Remotes)
-                sb.AppendLine($"    Remote: {remote}");
-        }
-
-        sb.AppendLine($"  Target DDL: {Path.GetFullPath(_targetPath)}");
-        if (targetGit.IsGitRepo)
-        {
-            sb.AppendLine($"    Git Branch: {targetGit.Branch}");
-            foreach (var remote in targetGit.Remotes)
-                sb.AppendLine($"    Remote: {remote}");
+            sb.AppendLine("  Mode: Full creation (no target — all objects are new)");
+            sb.AppendLine($"  Source DDL: {Path.GetFullPath(_sourcePath)}");
+            if (sourceGit.IsGitRepo)
+            {
+                sb.AppendLine($"    Git Branch: {sourceGit.Branch}");
+                foreach (var remote in sourceGit.Remotes)
+                    sb.AppendLine($"    Remote: {remote}");
+            }
         }
 
         // Change summary
