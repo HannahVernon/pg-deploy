@@ -8,7 +8,7 @@ namespace pg_deploy.Parsing;
 /// </summary>
 public static partial class DdlLoader
 {
-    public static DatabaseSchema Load(string folderPath)
+    public static DatabaseSchema Load(string folderPath, bool includeSystemObjects = false)
     {
         var schema = new DatabaseSchema();
 
@@ -25,7 +25,71 @@ public static partial class DdlLoader
         LoadFunctions(schema, folderPath, "procedures", "procedure");
         LoadTriggers(schema, folderPath);
 
+        if (!includeSystemObjects)
+            StripSystemObjects(schema);
+
         return schema;
+    }
+
+    /// <summary>
+    /// PostgreSQL internal schema prefixes. Objects in these schemas are managed
+    /// by PostgreSQL itself and should not appear in deployment scripts.
+    /// </summary>
+    private static readonly string[] SystemSchemaPrefixes =
+    [
+        "pg_toast",
+        "pg_temp",
+        "pg_catalog",
+        "information_schema"
+    ];
+
+    /// <summary>
+    /// PostgreSQL system extensions that are pre-installed and not user-managed.
+    /// </summary>
+    private static readonly HashSet<string> SystemExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "plpgsql"
+    };
+
+    private static bool IsSystemSchema(string schemaName)
+    {
+        foreach (var prefix in SystemSchemaPrefixes)
+        {
+            if (schemaName.Equals(prefix, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (schemaName.StartsWith(prefix + "_", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static void StripSystemObjects(DatabaseSchema schema)
+    {
+        RemoveByKey(schema.Schemas, key => IsSystemSchema(key));
+        RemoveByKey(schema.Extensions, key => SystemExtensions.Contains(key));
+        RemoveByValue(schema.Types, t => IsSystemSchema(t.Schema));
+        RemoveByValue(schema.Sequences, s => IsSystemSchema(s.Schema));
+        RemoveByValue(schema.Tables, t => IsSystemSchema(t.Schema));
+        RemoveByValue(schema.Indexes, i => IsSystemSchema(i.Schema));
+        RemoveByValue(schema.ForeignKeys, fk => IsSystemSchema(fk.Schema));
+        RemoveByValue(schema.Views, v => IsSystemSchema(v.Schema));
+        RemoveByValue(schema.MaterializedViews, mv => IsSystemSchema(mv.Schema));
+        RemoveByValue(schema.Functions, f => IsSystemSchema(f.Schema));
+        RemoveByValue(schema.Triggers, t => IsSystemSchema(t.Schema));
+    }
+
+    private static void RemoveByKey<T>(Dictionary<string, T> dict, Func<string, bool> predicate)
+    {
+        var keys = dict.Keys.Where(predicate).ToList();
+        foreach (var key in keys)
+            dict.Remove(key);
+    }
+
+    private static void RemoveByValue<T>(Dictionary<string, T> dict, Func<T, bool> predicate)
+    {
+        var keys = dict.Where(kv => predicate(kv.Value)).Select(kv => kv.Key).ToList();
+        foreach (var key in keys)
+            dict.Remove(key);
     }
 
     private static IEnumerable<(string fileName, string content)> ReadSqlFiles(string folderPath, string subdir)

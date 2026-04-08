@@ -19,6 +19,9 @@ var allowDropsOption = new Option<bool>("--allow-drops", getDefaultValue: () => 
 var trustSourceOption = new Option<bool>("--trust-source-folder", getDefaultValue: () => false,
     description: "Trust all DDL files in the source folder without prompting. Required for non-interactive use.");
 
+var includeSystemOption = new Option<bool>("--include-postgres-system-objects", getDefaultValue: () => false,
+    description: "Include PostgreSQL system objects (pg_catalog, pg_toast, pg_temp, information_schema, plpgsql) in the diff. By default these are excluded.");
+
 var verboseOption = new Option<bool>("--verbose", getDefaultValue: () => false, description: "Verbose console output");
 verboseOption.AddAlias("-v");
 
@@ -27,10 +30,10 @@ quietOption.AddAlias("-q");
 
 var rootCommand = new RootCommand("pg_deploy — Generate incremental PostgreSQL deployment scripts by comparing DDL folders")
 {
-    sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, verboseOption, quietOption
+    sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, includeSystemOption, verboseOption, quietOption
 };
 
-rootCommand.SetHandler((source, target, output, allowDrops, trustSource, verbose, quiet) =>
+rootCommand.SetHandler((source, target, output, allowDrops, trustSource, includeSystem, verbose, quiet) =>
 {
     try
     {
@@ -84,11 +87,11 @@ rootCommand.SetHandler((source, target, output, allowDrops, trustSource, verbose
 
         // Load schemas
         if (verbose) Console.WriteLine($"Loading source DDL from: {Path.GetFullPath(source)}");
-        var sourceSchema = DdlLoader.Load(source);
+        var sourceSchema = DdlLoader.Load(source, includeSystem);
         if (verbose) PrintSchemaStats("Source", sourceSchema);
 
         if (verbose) Console.WriteLine($"Loading target DDL from: {Path.GetFullPath(target)}");
-        var targetSchema = DdlLoader.Load(target);
+        var targetSchema = DdlLoader.Load(target, includeSystem);
         if (verbose) PrintSchemaStats("Target", targetSchema);
 
         // Compute diff
@@ -153,7 +156,7 @@ rootCommand.SetHandler((source, target, output, allowDrops, trustSource, verbose
         }
         Environment.ExitCode = 1;
     }
-}, sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, verboseOption, quietOption);
+}, sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, includeSystemOption, verboseOption, quietOption);
 
 return await rootCommand.InvokeAsync(args);
 
