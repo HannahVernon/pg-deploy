@@ -28,7 +28,7 @@ verboseOption.AddAlias("-v");
 var quietOption = new Option<bool>("--quiet", getDefaultValue: () => false, description: "Suppress all console output");
 quietOption.AddAlias("-q");
 
-var rootCommand = new RootCommand("pg_deploy — Generate incremental PostgreSQL deployment scripts by comparing DDL folders")
+var rootCommand = new RootCommand("pg-deploy — Generate incremental PostgreSQL deployment scripts by comparing DDL folders")
 {
     sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, includeSystemOption, verboseOption, quietOption
 };
@@ -82,7 +82,7 @@ rootCommand.SetHandler((source, target, output, allowDrops, trustSource, include
             Console.WriteLine();
         }
 
-        if (!quiet) Console.WriteLine("pg_deploy — PostgreSQL Deployment Script Generator");
+        if (!quiet) Console.WriteLine("pg-deploy — PostgreSQL Deployment Script Generator");
         if (!quiet) Console.WriteLine();
 
         // Load schemas

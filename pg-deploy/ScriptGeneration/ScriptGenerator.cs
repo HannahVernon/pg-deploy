@@ -59,7 +59,7 @@ public sealed class ScriptGenerator
         sb.AppendLine("================================================================================");
         sb.AppendLine("  PostgreSQL Deployment Script");
         sb.AppendLine($"  Generated: {DateTime.UtcNow:yyyy-MM-dd HH:mm:ss} UTC");
-        sb.AppendLine("  Generator: pg_deploy");
+        sb.AppendLine("  Generator: pg-deploy");
         sb.AppendLine("================================================================================");
 
         // Git info
