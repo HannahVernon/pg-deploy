@@ -63,6 +63,80 @@ public sealed class SchemaDiffer
         _allowDrops = allowDrops;
     }
 
+    /// <summary>
+    /// Finds objects in the target schema that depend on the given object.
+    /// Used to populate CASCADE warning comments in the generated script.
+    /// </summary>
+    private List<string> FindDependents(string objectType, string schema, string name)
+    {
+        var dependents = new List<string>();
+        var qualifiedName = $"\"{schema}\".\"{name}\"";
+
+        switch (objectType.ToUpperInvariant())
+        {
+            case "SCHEMA":
+                foreach (var t in _target.Tables.Values.Where(t => t.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"TABLE {t.QualifiedName}");
+                foreach (var v in _target.Views.Values.Where(v => v.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"VIEW {v.QualifiedName}");
+                foreach (var mv in _target.MaterializedViews.Values.Where(mv => mv.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"MATERIALIZED VIEW {mv.QualifiedName}");
+                foreach (var f in _target.Functions.Values.Where(f => f.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"{f.Kind.ToUpperInvariant()} {f.QualifiedName}");
+                foreach (var tp in _target.Types.Values.Where(tp => tp.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"TYPE {tp.QualifiedName}");
+                foreach (var sq in _target.Sequences.Values.Where(sq => sq.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"SEQUENCE {sq.QualifiedName}");
+                break;
+
+            case "TABLE":
+                foreach (var fk in _target.ForeignKeys.Values)
+                {
+                    if (fk.Definition.Contains(qualifiedName, StringComparison.OrdinalIgnoreCase)
+                        && !(fk.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase)
+                             && fk.TableName.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                        dependents.Add($"FK {fk.QualifiedName} on \"{fk.Schema}\".\"{fk.TableName}\"");
+                }
+                foreach (var idx in _target.Indexes.Values.Where(i =>
+                    i.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase) &&
+                    i.TableName.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"INDEX {idx.QualifiedName}");
+                foreach (var trg in _target.Triggers.Values.Where(t =>
+                    t.Schema.Equals(schema, StringComparison.OrdinalIgnoreCase) &&
+                    t.TableName.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"TRIGGER \"{trg.Schema}\".\"{trg.Name}\"");
+                foreach (var v in _target.Views.Values.Where(v =>
+                    v.RawDdl.Contains(qualifiedName, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"VIEW {v.QualifiedName}");
+                foreach (var mv in _target.MaterializedViews.Values.Where(mv =>
+                    mv.RawDdl.Contains(qualifiedName, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"MATERIALIZED VIEW {mv.QualifiedName}");
+                break;
+
+            case "TYPE":
+                foreach (var t in _target.Tables.Values)
+                    foreach (var col in t.Columns)
+                        if (col.DataType.Contains(name, StringComparison.OrdinalIgnoreCase))
+                        {
+                            dependents.Add($"COLUMN {t.QualifiedName}.{col.Name}");
+                            break;
+                        }
+                foreach (var f in _target.Functions.Values.Where(f =>
+                    f.RawDdl.Contains(qualifiedName, StringComparison.OrdinalIgnoreCase)))
+                    dependents.Add($"{f.Kind.ToUpperInvariant()} {f.QualifiedName}");
+                break;
+        }
+
+        return dependents;
+    }
+
+    private string FormatCascadeWarning(string baseWarning, List<string> dependents)
+    {
+        if (dependents.Count == 0)
+            return baseWarning;
+        return $"{baseWarning} Affected objects: {string.Join(", ", dependents)}";
+    }
+
     public List<SchemaChange> ComputeChanges()
     {
         var changes = new List<SchemaChange>();
@@ -161,6 +235,7 @@ public sealed class SchemaDiffer
             {
                 if (!_source.Schemas.ContainsKey(key))
                 {
+                    var deps = FindDependents("SCHEMA", tgt.Name, tgt.Name);
                     changes.Add(new SchemaChange
                     {
                         Category = ChangeCategory.Schema,
@@ -169,7 +244,7 @@ public sealed class SchemaDiffer
                         ObjectName = tgt.Name,
                         Sql = $"DROP SCHEMA IF EXISTS \"{tgt.Name}\" CASCADE;",
                         IsDestructive = true,
-                        Warning = "CASCADE will drop all objects in this schema!"
+                        Warning = FormatCascadeWarning("CASCADE will drop all objects in this schema!", deps)
                     });
                 }
             }
@@ -205,6 +280,7 @@ public sealed class SchemaDiffer
             {
                 if (!_source.Types.ContainsKey(key))
                 {
+                    var deps = FindDependents("TYPE", tgt.Schema, tgt.Name);
                     changes.Add(new SchemaChange
                     {
                         Category = ChangeCategory.Type,
@@ -212,14 +288,17 @@ public sealed class SchemaDiffer
                         ObjectType = "TYPE",
                         ObjectName = tgt.QualifiedName,
                         Sql = $"DROP TYPE IF EXISTS {tgt.QualifiedName} CASCADE;",
-                        IsDestructive = true
+                        IsDestructive = true,
+                        Warning = deps.Count > 0
+                            ? FormatCascadeWarning("CASCADE will drop dependent objects!", deps)
+                            : null
                     });
                 }
             }
         }
     }
 
-    private static void DiffTypeModify(List<SchemaChange> changes, TypeDef src, TypeDef tgt)
+    private void DiffTypeModify(List<SchemaChange> changes, TypeDef src, TypeDef tgt)
     {
         if (src.Kind == TypeKind.Enum && tgt.Kind == TypeKind.Enum)
         {
@@ -255,6 +334,7 @@ public sealed class SchemaDiffer
 
             if (removedLabels.Count > 0)
             {
+                var deps = FindDependents("TYPE", src.Schema, src.Name);
                 changes.Add(new SchemaChange
                 {
                     Category = ChangeCategory.Type,
@@ -264,12 +344,15 @@ public sealed class SchemaDiffer
                     Sql = $"/* WARNING: Enum labels removed: {string.Join(", ", removedLabels)} */\n" +
                           $"/* PostgreSQL does not support removing enum values. Manual intervention required. */\n" +
                           $"/* Consider: DROP TYPE {src.QualifiedName} CASCADE; then recreate. */",
-                    Warning = $"Cannot remove enum labels ({string.Join(", ", removedLabels)}) — requires DROP+CREATE which cascades to dependent columns."
+                    Warning = FormatCascadeWarning(
+                        $"Cannot remove enum labels ({string.Join(", ", removedLabels)}) — requires DROP+CREATE which cascades to dependent columns.",
+                        deps)
                 });
             }
         }
         else
         {
+            var deps = FindDependents("TYPE", tgt.Schema, tgt.Name);
             changes.Add(new SchemaChange
             {
                 Category = ChangeCategory.Type,
@@ -277,7 +360,7 @@ public sealed class SchemaDiffer
                 ObjectType = "TYPE",
                 ObjectName = src.QualifiedName,
                 Sql = $"DROP TYPE IF EXISTS {tgt.QualifiedName} CASCADE;\n\n{src.RawDdl}",
-                Warning = "Type definition changed — requires DROP+CREATE which may cascade."
+                Warning = FormatCascadeWarning("Type definition changed — requires DROP+CREATE which may cascade.", deps)
             });
         }
     }
@@ -380,6 +463,7 @@ public sealed class SchemaDiffer
             {
                 if (!_source.Tables.ContainsKey(key))
                 {
+                    var deps = FindDependents("TABLE", tgt.Schema, tgt.Name);
                     changes.Add(new SchemaChange
                     {
                         Category = ChangeCategory.Table,
@@ -388,7 +472,7 @@ public sealed class SchemaDiffer
                         ObjectName = tgt.QualifiedName,
                         Sql = $"DROP TABLE IF EXISTS {tgt.QualifiedName} CASCADE;",
                         IsDestructive = true,
-                        Warning = "CASCADE will drop dependent objects (FKs, views, etc.)"
+                        Warning = FormatCascadeWarning("CASCADE will drop dependent objects!", deps)
                     });
                 }
             }
@@ -971,18 +1055,25 @@ public sealed class SchemaDiffer
 
         if (_allowDrops)
         {
+            var droppedSignatures = new HashSet<string>(StringComparer.Ordinal);
             foreach (var (key, tgt) in _target.Functions)
             {
                 if (!_source.Functions.ContainsKey(key))
                 {
                     var dropKw = tgt.Kind.Equals("procedure", StringComparison.OrdinalIgnoreCase) ? "PROCEDURE" : "FUNCTION";
+                    var sigPart = tgt.ParameterSignature != null ? $"({tgt.ParameterSignature})" : "";
+                    var dropSql = $"DROP {dropKw} IF EXISTS {tgt.QualifiedName}{sigPart};";
+
+                    if (!droppedSignatures.Add(dropSql))
+                        continue;
+
                     changes.Add(new SchemaChange
                     {
                         Category = ChangeCategory.Function,
                         Action = ChangeAction.Drop,
                         ObjectType = dropKw,
                         ObjectName = tgt.QualifiedName,
-                        Sql = $"DROP {dropKw} IF EXISTS {tgt.QualifiedName};",
+                        Sql = dropSql,
                         IsDestructive = true
                     });
                 }

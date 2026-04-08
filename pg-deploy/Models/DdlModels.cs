@@ -169,6 +169,12 @@ public sealed class FunctionDef
     public required string Kind { get; init; }  // "function" or "procedure"
     public required string RawDdl { get; init; }
     public string FileName { get; init; } = "";
+    /// <summary>
+    /// The parameter type signature extracted from the DDL, used to distinguish
+    /// overloaded functions/procedures and generate correct DROP statements.
+    /// Example: "IN p_appprofileid integer, IN p_effectivedate date"
+    /// </summary>
+    public string? ParameterSignature { get; init; }
 
     public string QualifiedName => $"\"{Schema}\".\"{Name}\"";
 }

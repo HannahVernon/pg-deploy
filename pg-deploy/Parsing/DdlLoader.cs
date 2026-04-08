@@ -603,6 +603,7 @@ public static partial class DdlLoader
             var key = Path.GetFileNameWithoutExtension(fileName);
             var schemaName = m.Groups[2].Value.Trim('"');
             var funcName = m.Groups[3].Value.Trim('"');
+            var paramSig = ExtractParameterSignature(content, m.Index + m.Length);
 
             var def = new FunctionDef
             {
@@ -610,10 +611,38 @@ public static partial class DdlLoader
                 Name = funcName,
                 Kind = kind,
                 RawDdl = content.Trim(),
-                FileName = fileName
+                FileName = fileName,
+                ParameterSignature = paramSig
             };
             schema.Functions[key] = def;
         }
+    }
+
+    /// <summary>
+    /// Extracts the parameter signature from a CREATE FUNCTION/PROCEDURE statement.
+    /// Starts scanning from <paramref name="startIndex"/> (just after the opening parenthesis)
+    /// and finds the matching closing parenthesis, respecting nested parentheses.
+    /// </summary>
+    internal static string? ExtractParameterSignature(string ddl, int startIndex)
+    {
+        if (startIndex >= ddl.Length) return null;
+
+        int depth = 1;
+        int i = startIndex;
+        while (i < ddl.Length && depth > 0)
+        {
+            switch (ddl[i])
+            {
+                case '(': depth++; break;
+                case ')': depth--; break;
+            }
+            if (depth > 0) i++;
+        }
+
+        if (depth != 0) return null;
+
+        var sig = ddl[startIndex..i].Trim();
+        return sig.Length > 0 ? sig : null;
     }
 
     // ── Triggers ────────────────────────────────────────────────────
