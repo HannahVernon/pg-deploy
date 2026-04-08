@@ -11,6 +11,51 @@ public sealed class SchemaDiffer
     private readonly DatabaseSchema _target;
     private readonly bool _allowDrops;
 
+    /// <summary>
+    /// Validates that a CHECK constraint expression doesn't contain SQL injection vectors.
+    /// Semicolons outside of string literals or parenthesized blocks are rejected.
+    /// </summary>
+    private static bool IsCheckExpressionSafe(string expression)
+    {
+        if (string.IsNullOrWhiteSpace(expression))
+            return false;
+
+        bool inString = false;
+        int parenDepth = 0;
+
+        for (int i = 0; i < expression.Length; i++)
+        {
+            char c = expression[i];
+
+            if (inString)
+            {
+                if (c == '\'' && i + 1 < expression.Length && expression[i + 1] == '\'')
+                    i++; /* escaped quote — skip */
+                else if (c == '\'')
+                    inString = false;
+                continue;
+            }
+
+            switch (c)
+            {
+                case '\'':
+                    inString = true;
+                    break;
+                case '(':
+                    parenDepth++;
+                    break;
+                case ')':
+                    parenDepth--;
+                    if (parenDepth < 0) return false;
+                    break;
+                case ';':
+                    return false;
+            }
+        }
+
+        return !inString && parenDepth == 0;
+    }
+
     public SchemaDiffer(DatabaseSchema source, DatabaseSchema target, bool allowDrops)
     {
         _source = source;
@@ -192,8 +237,10 @@ public sealed class SchemaDiffer
                     var idx = srcLabels.IndexOf(label);
                     if (idx > 0)
                         sqlParts.Add($"ALTER TYPE {src.QualifiedName} ADD VALUE '{label.Replace("'", "''")}' AFTER '{srcLabels[idx - 1].Replace("'", "''")}';");
-                    else
+                    else if (srcLabels.Count > 1)
                         sqlParts.Add($"ALTER TYPE {src.QualifiedName} ADD VALUE '{label.Replace("'", "''")}' BEFORE '{srcLabels[1].Replace("'", "''")}';");
+                    else
+                        sqlParts.Add($"ALTER TYPE {src.QualifiedName} ADD VALUE '{label.Replace("'", "''")}';");
                 }
 
                 changes.Add(new SchemaChange
@@ -569,7 +616,19 @@ public sealed class SchemaDiffer
 
         foreach (var (name, srcCk) in srcCks)
         {
-            if (!tgtCks.TryGetValue(name, out var tgtCk))
+            if (!IsCheckExpressionSafe(srcCk.Expression))
+            {
+                changes.Add(new SchemaChange
+                {
+                    Category = ChangeCategory.Table,
+                    Action = ChangeAction.Add,
+                    ObjectType = "CHECK CONSTRAINT",
+                    ObjectName = $"{src.QualifiedName} ({name})",
+                    Sql = $"/* SKIPPED: CHECK constraint \"{name}\" has a potentially unsafe expression */",
+                    Warning = $"CHECK constraint \"{name}\" on {src.QualifiedName} was skipped — expression contains suspicious characters (possible SQL injection)"
+                });
+            }
+            else if (!tgtCks.TryGetValue(name, out var tgtCk))
             {
                 changes.Add(new SchemaChange
                 {

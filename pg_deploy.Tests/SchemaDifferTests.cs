@@ -1056,4 +1056,120 @@ public class SchemaDifferTests : IDisposable
         Assert.Contains(changes, c => c.Sql.Contains("SET NOT NULL"));
         Assert.Contains(changes, c => c.Sql.Contains("SET DEFAULT 'active'"));
     }
+
+    // ── Security Fix #3: Enum single-label IndexOutOfRange ──
+
+    [Fact]
+    public void Enum_SingleLabelAdd_NoIndexOutOfRange()
+    {
+        WriteSource("types", "s.status.sql",
+            "CREATE TYPE \"s\".\"status\" AS ENUM ('new_val', 'active');\n");
+        WriteTarget("types", "s.status.sql",
+            "CREATE TYPE \"s\".\"status\" AS ENUM ('active');\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        /* Should not crash with IndexOutOfRangeException when target has only 1 label */
+        Assert.Contains(changes, c => c.ObjectType == "TYPE (ENUM)" && c.Sql.Contains("ADD VALUE 'new_val'"));
+    }
+
+    [Fact]
+    public void Enum_AddLabelAfterExisting_UsesAfter()
+    {
+        WriteSource("types", "s.status.sql",
+            "CREATE TYPE \"s\".\"status\" AS ENUM ('active', 'inactive', 'archived');\n");
+        WriteTarget("types", "s.status.sql",
+            "CREATE TYPE \"s\".\"status\" AS ENUM ('active', 'inactive');\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        Assert.Contains(changes, c => c.Sql.Contains("ADD VALUE 'archived' AFTER 'inactive'"));
+    }
+
+    // ── Security Fix #2: CHECK constraint SQL injection ──
+
+    [Fact]
+    public void CheckConstraint_WithSemicolon_IsSkipped()
+    {
+        /* Injection payload INSIDE the CHECK parens so the parser captures it */
+        WriteSource("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"amount\" numeric NOT NULL,\n    CONSTRAINT \"chk_amount\" CHECK ((amount > 0); DROP TABLE users --)\n);\n");
+        WriteTarget("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"amount\" numeric NOT NULL\n);\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        var ckChange = changes.FirstOrDefault(c => c.ObjectType == "CHECK CONSTRAINT" && c.ObjectName.Contains("chk_amount"));
+        Assert.NotNull(ckChange);
+        Assert.Contains("SKIPPED", ckChange.Sql);
+        Assert.NotNull(ckChange.Warning);
+        Assert.Contains("suspicious", ckChange.Warning);
+    }
+
+    [Fact]
+    public void CheckConstraint_SafeExpression_IsAllowed()
+    {
+        WriteSource("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"amount\" numeric NOT NULL,\n    CONSTRAINT \"chk_amount\" CHECK ((amount > 0))\n);\n");
+        WriteTarget("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"amount\" numeric NOT NULL\n);\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        var ckChange = Assert.Single(changes, c => c.ObjectType == "CHECK CONSTRAINT" && c.ObjectName.Contains("chk_amount"));
+        Assert.Contains("ADD CONSTRAINT", ckChange.Sql);
+        Assert.DoesNotContain("SKIPPED", ckChange.Sql);
+    }
+
+    [Fact]
+    public void CheckConstraint_UnbalancedParens_IsSkipped()
+    {
+        /* The parser's regex naturally requires balanced parens for matching,
+           so a truly unbalanced expression won't survive parsing.
+           Instead verify that the expression validator correctly identifies
+           a crafted expression that embeds a semicolon inside balanced parens. */
+        WriteSource("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"amount\" numeric NOT NULL,\n    CONSTRAINT \"chk_amount\" CHECK ((amount > 0); DELETE FROM orders; SELECT (1))\n);\n");
+        WriteTarget("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"amount\" numeric NOT NULL\n);\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        var ckChange = changes.FirstOrDefault(c => c.ObjectType == "CHECK CONSTRAINT" && c.ObjectName.Contains("chk_amount"));
+        Assert.NotNull(ckChange);
+        Assert.Contains("SKIPPED", ckChange.Sql);
+    }
+
+    [Fact]
+    public void CheckConstraint_SemicolonInsideStringLiteral_IsAllowed()
+    {
+        WriteSource("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"status\" text NOT NULL,\n    CONSTRAINT \"chk_status\" CHECK ((status <> 'a;b'))\n);\n");
+        WriteTarget("tables", "s.orders.sql",
+            "CREATE TABLE \"s\".\"orders\" (\n    \"status\" text NOT NULL\n);\n");
+
+        var source = DdlLoader.Load(_sourceDir);
+        var target = DdlLoader.Load(_targetDir);
+        var differ = new SchemaDiffer(source, target, allowDrops: false);
+        var changes = differ.ComputeChanges();
+
+        var ckChange = Assert.Single(changes, c => c.ObjectType == "CHECK CONSTRAINT" && c.ObjectName.Contains("chk_status"));
+        Assert.Contains("ADD CONSTRAINT", ckChange.Sql);
+        Assert.DoesNotContain("SKIPPED", ckChange.Sql);
+    }
 }

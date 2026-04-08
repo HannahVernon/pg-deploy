@@ -16,6 +16,9 @@ outputOption.AddAlias("-o");
 var allowDropsOption = new Option<bool>("--allow-drops", getDefaultValue: () => false,
     description: "Enable destructive changes (drops). Drops are placed in a clearly-marked section.");
 
+var trustSourceOption = new Option<bool>("--trust-source-folder", getDefaultValue: () => false,
+    description: "Trust all DDL files in the source folder without prompting. Required for non-interactive use.");
+
 var verboseOption = new Option<bool>("--verbose", getDefaultValue: () => false, description: "Verbose console output");
 verboseOption.AddAlias("-v");
 
@@ -24,10 +27,10 @@ quietOption.AddAlias("-q");
 
 var rootCommand = new RootCommand("pg_deploy — Generate incremental PostgreSQL deployment scripts by comparing DDL folders")
 {
-    sourceOption, targetOption, outputOption, allowDropsOption, verboseOption, quietOption
+    sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, verboseOption, quietOption
 };
 
-rootCommand.SetHandler((source, target, output, allowDrops, verbose, quiet) =>
+rootCommand.SetHandler((source, target, output, allowDrops, trustSource, verbose, quiet) =>
 {
     try
     {
@@ -43,6 +46,37 @@ rootCommand.SetHandler((source, target, output, allowDrops, verbose, quiet) =>
             if (!quiet) Console.Error.WriteLine($"Error: Target folder not found: {target}");
             Environment.ExitCode = 1;
             return;
+        }
+
+        // Source folder trust check
+        if (!trustSource)
+        {
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine("╔══════════════════════════════════════════════════════════════╗");
+            Console.WriteLine("║  ⚠  WARNING: Source folder contents have not been verified  ║");
+            Console.WriteLine("╚══════════════════════════════════════════════════════════════╝");
+            Console.ResetColor();
+            Console.WriteLine();
+            Console.WriteLine($"  Source: {Path.GetFullPath(source)}");
+            Console.WriteLine();
+            Console.WriteLine("  DDL files from the source folder will be embedded directly");
+            Console.WriteLine("  into the generated deployment script. Malicious DDL files");
+            Console.WriteLine("  could inject arbitrary SQL that executes against your database.");
+            Console.WriteLine();
+            Console.WriteLine("  Only proceed if you trust the source of these files.");
+            Console.WriteLine("  Use --trust-source-folder to skip this prompt.");
+            Console.WriteLine();
+            Console.Write("  Continue? [y/N] ");
+
+            var response = Console.ReadLine()?.Trim();
+            if (!string.Equals(response, "y", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase))
+            {
+                Console.WriteLine("Aborted.");
+                Environment.ExitCode = 1;
+                return;
+            }
+            Console.WriteLine();
         }
 
         if (!quiet) Console.WriteLine("pg_deploy — PostgreSQL Deployment Script Generator");
@@ -119,7 +153,7 @@ rootCommand.SetHandler((source, target, output, allowDrops, verbose, quiet) =>
         }
         Environment.ExitCode = 1;
     }
-}, sourceOption, targetOption, outputOption, allowDropsOption, verboseOption, quietOption);
+}, sourceOption, targetOption, outputOption, allowDropsOption, trustSourceOption, verboseOption, quietOption);
 
 return await rootCommand.InvokeAsync(args);
 
