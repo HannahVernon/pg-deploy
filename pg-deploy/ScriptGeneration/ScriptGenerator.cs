@@ -198,14 +198,14 @@ public sealed class ScriptGenerator
             var catChanges = nonDestructive.Where(c => c.Category == category).ToList();
             if (catChanges.Count == 0) continue;
 
-            sb.AppendLine($"-- ══════════════════════════════════════════════════════════════");
-            sb.AppendLine($"-- {category} Changes");
-            sb.AppendLine($"-- ══════════════════════════════════════════════════════════════");
+            sb.AppendLine($"/* ══════════════════════════════════════════════════════════════ */");
+            sb.AppendLine($"/* {category} Changes                                              */");
+            sb.AppendLine($"/* ══════════════════════════════════════════════════════════════ */");
             sb.AppendLine();
 
             foreach (var change in catChanges)
             {
-                sb.AppendLine($"-- {change.Action.ToString().ToUpperInvariant()}: {change.ObjectType} {change.ObjectName}");
+                sb.AppendLine($"/* {change.Action.ToString().ToUpperInvariant()}: {change.ObjectType} {change.ObjectName} */");
                 // Record line number (1-indexed, for the SQL statement start)
                 change.LineNumber = sb.ToString().Split('\n').Length;
                 sb.AppendLine(change.Sql);
@@ -216,9 +216,9 @@ public sealed class ScriptGenerator
         // Destructive changes section
         if (destructive.Count > 0 && _allowDrops)
         {
-            sb.AppendLine("-- ╔══════════════════════════════════════════════════════════════╗");
-            sb.AppendLine("-- ║           ⚠  DESTRUCTIVE CHANGES — REVIEW CAREFULLY  ⚠     ║");
-            sb.AppendLine("-- ╚══════════════════════════════════════════════════════════════╝");
+            sb.AppendLine("/* ╔══════════════════════════════════════════════════════════════╗ */");
+            sb.AppendLine("/* ║           ⚠  DESTRUCTIVE CHANGES — REVIEW CAREFULLY  ⚠     ║ */");
+            sb.AppendLine("/* ╚══════════════════════════════════════════════════════════════╝ */");
             sb.AppendLine();
 
             foreach (var category in orderedCategories)
@@ -226,11 +226,11 @@ public sealed class ScriptGenerator
                 var catDrops = destructive.Where(c => c.Category == category).ToList();
                 if (catDrops.Count == 0) continue;
 
-                sb.AppendLine($"-- DROP {category}:");
+                sb.AppendLine($"/* DROP {category}: */");
                 foreach (var drop in catDrops)
                 {
                     if (drop.Warning != null)
-                        sb.AppendLine($"-- WARNING: {drop.Warning}");
+                        sb.AppendLine($"/* WARNING: {drop.Warning} */");
                     drop.LineNumber = sb.ToString().Split('\n').Length;
                     sb.AppendLine(drop.Sql);
                     sb.AppendLine();
